@@ -1,5 +1,18 @@
 # Windows flashing — debugging handoff
 
+> **✅ RESOLVED (2026-07-06).** Root cause: the esptool v5.0.0 archive unpacks to a
+> folder **without** the version in its name (`esptool-windows-amd64` /
+> `esptool-linux-amd64`), but `update.bat`/`update.sh` looked for
+> `esptool-v5.0.0-...`. That path didn't exist, so a non-existent binary "ran,"
+> errored instantly, and was mislabeled as a flash failure (sending you chasing the
+> BOOT button). The device, cable, baud, and USB reset were all fine. **Both scripts
+> now find `esptool.exe`/`esptool` by searching the cache**, so re-download the ZIP and
+> run again — it should flash straight to COM5, no BOOT button needed. The notes below
+> are kept as a record of the diagnosis.
+
+---
+
+
 Hand this to a Claude Code (or any assistant) running on the Windows PC that's
 failing to flash a NestAlert device. It has everything needed to diagnose without
 prior context.

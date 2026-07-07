@@ -20,6 +20,9 @@ echo "   NestAlert device updater"
 echo "==================================================="
 
 # --- 1. esptool: use one on PATH, else download the standalone build ----------
+# NOTE: the v5.0.0 archive unpacks to a folder WITHOUT the version in its name
+# (e.g. "esptool-linux-amd64"), so locate the binary by searching the cache
+# rather than assuming a fixed path.
 if command -v esptool >/dev/null 2>&1; then
   ESPTOOL="esptool"
 else
@@ -27,14 +30,16 @@ else
     Darwin) ARCH="macos" ;;
     *)      ARCH="linux-amd64" ;;
   esac
-  ESPDIR="$WORK/esptool-${ESPTOOL_VER}-${ARCH}"
-  ESPTOOL="$ESPDIR/esptool"
-  if [ ! -x "$ESPTOOL" ]; then
+  ESPTOOL="$(find "$WORK" -type f -name esptool 2>/dev/null | head -1)"
+  if [ -z "$ESPTOOL" ]; then
     echo ">> downloading esptool ${ESPTOOL_VER} (one time) ..."
     curl -fL "https://github.com/espressif/esptool/releases/download/${ESPTOOL_VER}/esptool-${ESPTOOL_VER}-${ARCH}.tar.gz" -o "$WORK/esptool.tgz" \
       && tar -xzf "$WORK/esptool.tgz" -C "$WORK" \
       || { echo "Could not download esptool. Check the internet connection."; exit 1; }
+    ESPTOOL="$(find "$WORK" -type f -name esptool 2>/dev/null | head -1)"
   fi
+  [ -n "$ESPTOOL" ] || { echo "Could not locate esptool after extracting."; exit 1; }
+  chmod +x "$ESPTOOL" 2>/dev/null || true
 fi
 
 # --- 2. fetch the latest firmware + checksums --------------------------------

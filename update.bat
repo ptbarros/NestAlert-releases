@@ -20,14 +20,19 @@ echo    NestAlert device updater
 echo ===================================================
 
 REM --- 1. esptool standalone (download once) ---------------------------------
-set "ESPDIR=%WORK%\esptool-%ESPVER%-windows-amd64"
-set "ESPTOOL=%ESPDIR%\esptool.exe"
-if not exist "%ESPTOOL%" (
+REM  The v5.0.0 zip unpacks to a folder WITHOUT the version in its name
+REM  ("esptool-windows-amd64"), so locate esptool.exe by searching the cache
+REM  rather than assuming a fixed path.
+set "ESPTOOL="
+for /r "%WORK%" %%e in (esptool.exe) do set "ESPTOOL=%%e"
+if not defined ESPTOOL (
   echo ^>^> downloading esptool %ESPVER% ^(one time^) ...
   curl -fL "https://github.com/espressif/esptool/releases/download/%ESPVER%/esptool-%ESPVER%-windows-amd64.zip" -o "%WORK%\esptool.zip"
   if errorlevel 1 ( echo Could not download esptool. Check the internet connection. & pause & exit /b 1 )
   powershell -NoProfile -Command "Expand-Archive -Force '%WORK%\esptool.zip' '%WORK%'"
+  for /r "%WORK%" %%e in (esptool.exe) do set "ESPTOOL=%%e"
 )
+if not defined ESPTOOL ( echo Could not locate esptool.exe after extracting. & pause & exit /b 1 )
 
 REM --- 2. fetch the latest firmware + checksums ------------------------------
 echo ^>^> fetching latest firmware ...
