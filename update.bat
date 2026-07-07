@@ -49,17 +49,32 @@ if errorlevel 1 ( echo CHECKSUM MISMATCH - download looks corrupted. Re-run to t
 echo ^>^> checksums OK
 
 REM --- 4. flash loop (one device at a time) ---------------------------------
-REM esptool auto-detects the COM port when --port is omitted.
 :loop
 echo.
 set "ans="
 set /p "ans=Plug in ONE device, then press ENTER to flash it (or type q then ENTER to quit): "
 if /I "!ans!"=="q" goto end
-echo ^>^> flashing %VERSION% ...
-"%ESPTOOL%" --chip esp32s3 --baud 921600 write-flash 0x0 "%WORK%\bootloader.bin" 0x8000 "%WORK%\partitions.bin" 0xe000 "%WORK%\boot_app0.bin" 0x10000 "%WORK%\app.bin"
+
+REM Find the ESP32-S3's own COM port by its Espressif USB id (VID_303A), so a
+REM second serial gadget (mouse dongle, etc.) on another COM is ignored.
+set "PORT="
+for /f "usebackq delims=" %%p in (`powershell -NoProfile -Command "Get-PnpDevice -Class Ports -PresentOnly -ErrorAction SilentlyContinue ^| Where-Object { $_.InstanceId -match 'VID_303A' } ^| ForEach-Object { if($_.FriendlyName -match 'COM\d+'){$Matches[0]} }"`) do set "PORT=%%p"
+if not defined PORT (
+  echo.
+  echo    [!] Could not find the NestAlert device's COM port.
+  echo        Check Device Manager - it should appear under "Ports ^(COM ^& LPT^)"
+  echo        as "USB Serial Device ^(COMx^)" when plugged in.
+  echo        If it won't connect, force download mode: unplug, HOLD the BOOT button,
+  echo        plug USB back in while holding, release BOOT ^(screen stays dark^), press ENTER.
+  goto loop
+)
+echo ^>^> flashing %VERSION% to %PORT% ...
+"%ESPTOOL%" --chip esp32s3 --port %PORT% --baud 921600 write-flash 0x0 "%WORK%\bootloader.bin" 0x8000 "%WORK%\partitions.bin" 0xe000 "%WORK%\boot_app0.bin" 0x10000 "%WORK%\app.bin"
 if errorlevel 1 (
   echo.
-  echo    [X] FLASH FAILED - try a different USB cable/port, then retry.
+  echo    [X] FLASH FAILED on %PORT%.
+  echo        Force download mode and retry: unplug the device, HOLD the BOOT button,
+  echo        plug USB back in while holding, release BOOT ^(screen stays dark^), press ENTER.
 ) else (
   echo.
   echo    [OK] SUCCESS - flashed %VERSION%.
