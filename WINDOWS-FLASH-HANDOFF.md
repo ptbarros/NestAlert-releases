@@ -1,14 +1,17 @@
 # Windows flashing — debugging handoff
 
-> **✅ RESOLVED (2026-07-06).** Root cause: the esptool v5.0.0 archive unpacks to a
-> folder **without** the version in its name (`esptool-windows-amd64` /
-> `esptool-linux-amd64`), but `update.bat`/`update.sh` looked for
-> `esptool-v5.0.0-...`. That path didn't exist, so a non-existent binary "ran,"
-> errored instantly, and was mislabeled as a flash failure (sending you chasing the
-> BOOT button). The device, cable, baud, and USB reset were all fine. **Both scripts
-> now find `esptool.exe`/`esptool` by searching the cache**, so re-download the ZIP and
-> run again — it should flash straight to COM5, no BOOT button needed. The notes below
-> are kept as a record of the diagnosis.
+> **✅ RESOLVED (2026-07-06).** Two layered bugs, both about *finding esptool*:
+> **(1)** the esptool v5.0.0 archive unpacks to a folder **without** the version in
+> its name (`esptool-windows-amd64` / `esptool-linux-amd64`), but the scripts looked
+> for `esptool-v5.0.0-...`. **(2)** The first fix used batch `for /r "%WORK%" %%e in
+> (esptool.exe)` — but with a *literal* filename `for /r` fabricates a path for every
+> directory it walks **without checking existence**, so on an empty first-run cache
+> (the fresh-machine case) it set a bogus path, skipped the download, and ran a
+> missing exe → "FLASH FAILED." Fixed with a **wildcard**: `for /r ... in
+> (esptool*.exe) do if /I "%%~nxe"=="esptool.exe" ...`, which only yields real files.
+> `update.sh` uses `find` (existence-based) so it never had bug #2. The device, cable,
+> baud, and USB reset were all fine throughout — no BOOT button needed. Re-download the
+> ZIP and run; it flashes straight to COM5. Notes below kept as a record.
 
 ---
 

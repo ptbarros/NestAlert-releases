@@ -23,14 +23,19 @@ REM --- 1. esptool standalone (download once) ---------------------------------
 REM  The v5.0.0 zip unpacks to a folder WITHOUT the version in its name
 REM  ("esptool-windows-amd64"), so locate esptool.exe by searching the cache
 REM  rather than assuming a fixed path.
+REM  IMPORTANT: use a WILDCARD (esptool*.exe). With a literal filename, `for /r`
+REM  fabricates a path for EVERY directory it walks WITHOUT checking existence,
+REM  so on an empty first-run cache ESPTOOL would be set to a bogus path, the
+REM  download below would be skipped, and the flash would run a missing exe
+REM  ("FLASH FAILED"). A wildcard makes `for /r` yield only files that exist.
 set "ESPTOOL="
-for /r "%WORK%" %%e in (esptool.exe) do set "ESPTOOL=%%e"
+for /r "%WORK%" %%e in (esptool*.exe) do if /I "%%~nxe"=="esptool.exe" set "ESPTOOL=%%e"
 if not defined ESPTOOL (
   echo ^>^> downloading esptool %ESPVER% ^(one time^) ...
   curl -fL "https://github.com/espressif/esptool/releases/download/%ESPVER%/esptool-%ESPVER%-windows-amd64.zip" -o "%WORK%\esptool.zip"
   if errorlevel 1 ( echo Could not download esptool. Check the internet connection. & pause & exit /b 1 )
   powershell -NoProfile -Command "Expand-Archive -Force '%WORK%\esptool.zip' '%WORK%'"
-  for /r "%WORK%" %%e in (esptool.exe) do set "ESPTOOL=%%e"
+  for /r "%WORK%" %%e in (esptool*.exe) do if /I "%%~nxe"=="esptool.exe" set "ESPTOOL=%%e"
 )
 if not defined ESPTOOL ( echo Could not locate esptool.exe after extracting. & pause & exit /b 1 )
 
