@@ -1,24 +1,86 @@
 # Windows flashing — debugging handoff
 
-> **✅ RESOLVED (2026-07-06).** Two layered bugs, both about *finding esptool*:
-> **(1)** the esptool v5.0.0 archive unpacks to a folder **without** the version in
-> its name (`esptool-windows-amd64` / `esptool-linux-amd64`), but the scripts looked
-> for `esptool-v5.0.0-...`. **(2)** The first fix used batch `for /r "%WORK%" %%e in
-> (esptool.exe)` — but with a *literal* filename `for /r` fabricates a path for every
-> directory it walks **without checking existence**, so on an empty first-run cache
-> (the fresh-machine case) it set a bogus path, skipped the download, and ran a
-> missing exe → "FLASH FAILED." Fixed with a **wildcard**: `for /r ... in
-> (esptool*.exe) do if /I "%%~nxe"=="esptool.exe" ...`, which only yields real files.
-> `update.sh` uses `find` (existence-based) so it never had bug #2. The device, cable,
-> baud, and USB reset were all fine throughout — no BOOT button needed. Re-download the
-> ZIP and run; it flashes straight to COM5. Notes below kept as a record.
-
----
-
-
 Hand this to a Claude Code (or any assistant) running on the Windows PC that's
 failing to flash a NestAlert device. It has everything needed to diagnose without
 prior context.
+
+---
+
+## ✅ RESOLVED (2026-07-07) — verified flashing v7.3 to a real device on COM5
+
+The `FLASH FAILED` symptom came from **three independent bugs in `update.bat`**, each
+one masking the next. All are fixed and the script was verified end-to-end (fresh,
+empty `.cache` → download → extract → detect port → flash → `SUCCESS`) on the field PC.
+
+### Bug 1 — wrong esptool path (esptool never located)
+- The esptool v5.0.0 zip unpacks to `esptool-windows-amd64\` (**no version** in the
+  folder name), but the script looked for `esptool-v5.0.0-windows-amd64\esptool.exe`.
+  That path never existed → a missing exe "ran" → instant error mislabeled as
+  "FLASH FAILED → hold BOOT".
+- **Also a follow-on trap:** searching with `for /r "%WORK%" %%e in (esptool.exe)` using
+  a **literal** filename is wrong — `for /r` fabricates a path for *every* directory it
+  walks **without checking existence**, so on an empty first-run cache `ESPTOOL` gets a
+  bogus path, the download block is skipped, and a missing exe is flashed.
+- **Fix:** search with a **wildcard** + exact-name guard, which only yields files that
+  actually exist:
+  ```bat
+  for /r "%WORK%" %%e in (esptool*.exe) do if /I "%%~nxe"=="esptool.exe" set "ESPTOOL=%%e"
+  ```
+
+### Bug 2 — blank COM port passed to esptool ("No such command '921600'")
+- Symptom: `>> flashing v7.3 to   ...` (blank port) then esptool prints
+  **`No such command '921600'`**. With an empty `%PORT%`, the command became
+  `esptool.exe --chip esp32s3 --port  --baud 921600 write-flash ...` — esptool consumed
+  `--baud` as the port value and treated `921600` as a subcommand.
+- Root cause: a `VID_303A` device can present a **second interface without a COM
+  number**, so the old detection emitted a **whitespace line**. `for /f` sets `PORT` to
+  the **last** line, so `PORT` became `" "`. And `if not defined PORT` only checks
+  **existence**, not emptiness — so whitespace slipped past the guard.
+- **Fix (two parts):**
+  1. Detection now returns exactly one clean `COMx` token (first match only).
+  2. Replaced `if not defined PORT` with a real validation:
+     ```bat
+     echo !PORT!| findstr /R /C:"^COM[0-9][0-9]*$" >nul
+     if errorlevel 1 ( ...print "could not find device"... & goto loop )
+     ```
+     Blank / whitespace / garbage now loops back instead of launching a bad flash.
+
+### Bug 3 — fragile `^|` pipe-escaping in the detection FOR /F
+- The detection used caret-escaped pipes (`... ^| Where-Object ... ^| ForEach ...`)
+  inside `for /f \`powershell ...\``. That escaping can misfire (PowerShell receives a
+  literal `^`, errors, returns nothing) → `PORT` blank again.
+- **Fix:** rewrote detection as **pipe-free** PowerShell (a `foreach` loop with `break`)
+  so there are **no `|` characters at all**, hence no `^|` to break:
+  ```bat
+  for /f "usebackq delims=" %%p in (`powershell -NoProfile -Command "$found=''; foreach($d in (Get-PnpDevice -Class Ports -PresentOnly -ErrorAction SilentlyContinue)){ if($d.InstanceId -match 'VID_303A' -and $d.FriendlyName -match 'COM\d+'){ $found=$Matches[0]; break } }; Write-Output $found"`) do set "PORT=%%p"
+  ```
+
+### Added — "port is busy / Access is denied" hint on flash failure
+- If esptool prints `Could not open COMx ... PermissionError(13, 'Access is denied.')`
+  / *"port is busy"*, **another program is holding the port** — a Serial Monitor,
+  Arduino IDE, PuTTY, or a **previous/parallel flash process that didn't exit**. The
+  detected port is correct; it's just locked.
+- A half-finished flash from an interrupted attempt can leave the device on a **black
+  screen or boot-looping** (invalid app partition). This is **not a brick** — the
+  ESP32-S3 ROM bootloader + native USB-JTAG live in mask ROM, so the device stays
+  reachable (`esptool flash-id` still connects) and **one clean, uninterrupted
+  re-flash restores it**. Close whatever holds the port, unplug/replug, and re-run.
+- **Never run the flasher in the background / in parallel** — competing esptool
+  processes fight over the COM port and cause exactly this failure.
+- The `FLASH FAILED` message in `update.bat` now calls this out explicitly:
+  ```
+  If it said "port is busy" / "Access is denied": another program is
+  holding COMx. Close any Serial Monitor / Arduino IDE / PuTTY, or a
+  previous flash window, then retry. Unplug/replug the device to be sure.
+  ```
+
+### Also check `update.sh` (Linux)
+Confirm the Linux port detection can't hand an **empty string** to `esptool --port`
+(e.g. `grep`/`ls /dev/ttyACM*` matching nothing). The mechanism differs from Windows,
+but the failure class — "empty port silently reaches esptool" — is the same. Validate
+the detected port is a real `/dev/tty*` before flashing.
+
+---
 
 ## Goal
 

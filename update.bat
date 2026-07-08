@@ -67,9 +67,19 @@ if /I "!ans!"=="q" goto end
 
 REM Find the ESP32-S3's own COM port by its Espressif USB id (VID_303A), so a
 REM second serial gadget (mouse dongle, etc.) on another COM is ignored.
+REM  Emit ONLY a clean COMx token and take the FIRST one. A VID_303A device can
+REM  present a second interface without a COM number; the old code let that emit a
+REM  whitespace line, and since `for /f` sets PORT to the LAST line, PORT became
+REM  " " (blank). `if not defined` only checks EXISTENCE, so a whitespace PORT
+REM  slipped through and esptool got an empty --port ("No such command '921600'").
+REM  Pipe-free PowerShell (foreach + break) so there are NO '|' chars in the
+REM  FOR /F command and thus no fragile `^|` caret-escaping to misfire.
 set "PORT="
-for /f "usebackq delims=" %%p in (`powershell -NoProfile -Command "Get-PnpDevice -Class Ports -PresentOnly -ErrorAction SilentlyContinue ^| Where-Object { $_.InstanceId -match 'VID_303A' } ^| ForEach-Object { if($_.FriendlyName -match 'COM\d+'){$Matches[0]} }"`) do set "PORT=%%p"
-if not defined PORT (
+for /f "usebackq delims=" %%p in (`powershell -NoProfile -Command "$found=''; foreach($d in (Get-PnpDevice -Class Ports -PresentOnly -ErrorAction SilentlyContinue)){ if($d.InstanceId -match 'VID_303A' -and $d.FriendlyName -match 'COM\d+'){ $found=$Matches[0]; break } }; Write-Output $found"`) do set "PORT=%%p"
+REM  Validate PORT is really COMx (guards against blank/whitespace slipping past
+REM  `if not defined`, which only checks existence and not emptiness).
+echo !PORT!| findstr /R /C:"^COM[0-9][0-9]*$" >nul
+if errorlevel 1 (
   echo.
   echo    [!] Could not find the NestAlert device's COM port.
   echo        Check Device Manager - it should appear under "Ports ^(COM ^& LPT^)"
@@ -83,8 +93,12 @@ echo ^>^> flashing %VERSION% to %PORT% ...
 if errorlevel 1 (
   echo.
   echo    [X] FLASH FAILED on %PORT%.
-  echo        Force download mode and retry: unplug the device, HOLD the BOOT button,
-  echo        plug USB back in while holding, release BOOT ^(screen stays dark^), press ENTER.
+  echo        If it said "port is busy" / "Access is denied": another program is
+  echo        holding %PORT%. Close any Serial Monitor / Arduino IDE / PuTTY, or a
+  echo        previous flash window, then retry. Unplug/replug the device to be sure.
+  echo        Otherwise, force download mode and retry: unplug the device, HOLD the
+  echo        BOOT button, plug USB back in while holding, release BOOT ^(screen stays
+  echo        dark^), press ENTER.
 ) else (
   echo.
   echo    [OK] SUCCESS - flashed %VERSION%.
