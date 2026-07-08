@@ -64,6 +64,16 @@ while true; do
   read -r -p "Plug in ONE device, then press ENTER to flash it (or type q to quit): " ans
   [ "$ans" = "q" ] || [ "$ans" = "Q" ] && break
   PORT="$(detect_port)" || { echo "!! No device found on USB — check the cable and try again."; continue; }
+  # The port exists but may not be accessible: on Linux the serial device is
+  # owned by root:dialout, so a user not in the 'dialout' group gets esptool's
+  # cryptic "Path '...' is not readable." Catch it here with a real fix.
+  if [ ! -r "$PORT" ] || [ ! -w "$PORT" ]; then
+    echo "!! Found $PORT, but this user can't access it (permission denied)."
+    echo "   One-time fix — add yourself to the 'dialout' group, then LOG OUT and back in:"
+    echo "       sudo usermod -aG dialout \$USER"
+    echo "   (quick test without re-login: run  newgrp dialout  then re-run this script.)"
+    continue
+  fi
   echo ">> flashing ${VERSION} to ${PORT} ..."
   if "$ESPTOOL" --chip esp32s3 --port "$PORT" --baud 921600 write-flash \
         0x0 "$WORK/bootloader.bin" 0x8000 "$WORK/partitions.bin" \

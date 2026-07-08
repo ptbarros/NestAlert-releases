@@ -36,6 +36,11 @@ printed (e.g. `v7.3`).
 - **One device at a time.** Flash them one after another; don't plug in several at once.
 - **If a flash fails:** try a different USB cable or USB port and run it again.
   A failed flash doesn't harm the device — just retry.
+- **Linux first-time only** — if you see *"Path '/dev/ttyACM0' is not readable"*, your
+  user needs access to the USB serial port. Run this once, then **log out and back in**:
+  ```
+  sudo usermod -aG dialout $USER
+  ```
 - Firmware versions and release notes are on the **Releases** page (right-hand side
   of this repo).
 
